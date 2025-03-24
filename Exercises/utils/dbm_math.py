@@ -328,41 +328,54 @@ def hammerstein_optimization(
     best_order = None
     best_loss = jnp.inf
 
-    total_funcs = len(funcs)
     start_time = time.time()
-    print(
-        "Total Parameters tested: ",
-        total_funcs
-        * (nb_range[1] - nb_range[0] + 1)
-        * (na_range[1] - na_range[0] + 1)
-        * len(orders),
+
+    na_grid, nb_grid, order_grid, func_grid = jnp.meshgrid(
+        jnp.arange(na_range[0], na_range[1]),
+        jnp.arange(nb_range[0], nb_range[1]),
+        jnp.array(orders),
+        jnp.arange(len(funcs)),
+        indexing="ij",
     )
 
-    for index, func in enumerate(funcs):
+    na_flat = na_grid.flatten()
+    nb_flat = nb_grid.flatten()
+    order_flat = order_grid.flatten()
+    func_flat = func_grid.flatten()
+
+    print(f"Total parameters: {len(na_flat)}")
+    total_funcs = len(na_flat)
+    for index, (na, nb, order, func) in enumerate(
+        zip(na_flat, nb_flat, order_flat, func_flat)
+    ):
+        na = int(na)
+        nb = int(nb)
+        order = int(order)
+        func = int(func)
         current_time = time.time()
 
         if index < 2:
             step_time = current_time - start_time
-        else:
+        elif index % 10 == 0:
             step_time = ((current_time - start_time) + step_time) / 2
+            progress = (index + 1) / total_funcs * 100
+            seconds_left = step_time * total_funcs - index * step_time
 
-        print(f"Function {index + 1}/{total_funcs}")
-        print(f"Seconds left: {step_time * total_funcs - index * step_time}")
+            print(f"Progress: {progress:.2f} %")
+            print(f"Estimated optimization time left: {seconds_left:.2f}s")
+            print(f"Current iteration time: {step_time:.2f}s")
+
         start_time = current_time
+        params, *_ = hammerstein_jit(na, nb, y, u, order, funcs[func])
+        y_hat = hammerstein_sim(y[:na], u, na, nb, order, funcs[func], params)
+        loss = mean_absolute_error(y, y_hat)
 
-        for na in range(na_range[0], na_range[1] + 1):
-            for nb in range(nb_range[0], nb_range[1] + 1):
-                for order in orders:
-                    params, *_ = hammerstein_jit(na, nb, y, u, order, func)
-                    y_hat = hammerstein_sim(y[:na], u, na, nb, order, func, params)
-                    loss = mean_absolute_error(y, y_hat)
-
-                    if loss < best_loss:
-                        best_loss = loss
-                        best_params = params
-                        best_func = func
-                        best_order = order
-                        best_na = na
-                        best_nb = nb
+        if loss < best_loss:
+            best_loss = loss
+            best_params = params
+            best_func = func
+            best_order = order
+            best_na = na
+            best_nb = nb
 
     return best_params, best_loss, best_func, best_order, best_na, best_nb
