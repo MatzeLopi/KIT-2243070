@@ -17,7 +17,7 @@ Happy coding!
 - Implementation of recursive least squares algorithm
 
 ### Exercise 3
-- Implementation of 
+- Implementation of Hammerstein Model
 
 ### Exercise 4 
 - Implementation of DMDc algorithm
