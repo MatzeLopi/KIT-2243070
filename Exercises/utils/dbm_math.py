@@ -356,7 +356,7 @@ def hammerstein_optimization(
 
         if index < 2:
             step_time = current_time - start_time
-        elif index % 10 == 0:
+        elif index % 100 == 0:
             step_time = ((current_time - start_time) + step_time) / 2
             progress = (index + 1) / total_funcs * 100
             seconds_left = step_time * total_funcs - index * step_time
@@ -373,7 +373,7 @@ def hammerstein_optimization(
         if loss < best_loss:
             best_loss = loss
             best_params = params
-            best_func = func
+            best_func = funcs[func]
             best_order = order
             best_na = na
             best_nb = nb
