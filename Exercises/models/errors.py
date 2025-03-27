@@ -17,7 +17,7 @@ def mean_squared_error(y_true: jax.Array, y_pred: jax.Array) -> jax.Array:
 
 
 @jax.jit
-def mean_absolute_error(y_true: jax.Array, y_pred: jax.Array) -> jax.Array:
+def _mean_absolute_error(y_true: jax.Array, y_pred: jax.Array) -> jax.Array:
     """Mean Absolute Error
 
     Args:

@@ -6,7 +6,7 @@ from functools import partial
 import itertools
 import time
 
-from .errors import mean_absolute_error
+from .errors import _mean_absolute_error
 
 
 @partial(jax.jit, static_argnames=["na", "nb"])
@@ -214,7 +214,7 @@ def arx_optimizer(
         nb = int(nb)
         params, *_ = arx_fit(na, nb, y, u)
         y_hat = arx_sim(y[:na], u, na, nb, params)
-        loss = mean_absolute_error(y, y_hat)
+        loss = _mean_absolute_error(y, y_hat)
 
         if loss < best_loss:
             best_loss = loss
@@ -458,7 +458,7 @@ def hammerstein_optimization(
 
         params, *_ = hammerstein_jit(na, nb, y, u, order, funcs[func])
         y_hat = hammerstein_sim(y[:na], u, na, nb, order, funcs[func], params)
-        loss = mean_absolute_error(y, y_hat)
+        loss = _mean_absolute_error(y, y_hat)
 
         if loss < best_loss:
             best_loss = loss

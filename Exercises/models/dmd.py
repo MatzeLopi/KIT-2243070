@@ -1,0 +1,118 @@
+from functools import partial
+
+import jax
+import jax.numpy as jnp
+
+from .errors import _mean_absolute_error
+
+
+@partial(jax.jit, static_argnames=("r"))
+def fit(
+    x: jax.Array, x_prime: jax.Array, r: int
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Implementation of the Dynamic Mode Decomposition algorithm.
+
+    Args:
+        x (jax.Array): Data matrix at n-1.
+        x_prime (jax.Array): Data matrix at n.
+        r (int): Rank of the reduced order model.
+
+    Returns:
+        jax.Array: Reduced order model.
+        jax.Array: Dynamics.
+        jax.Array: Eigenvalues
+    """
+    # Step 1
+    u, s, vh = jnp.linalg.svd(x, full_matrices=False)
+    u_tilde = u[:, 0:r]
+    s_tilde = jnp.diag(s[0:r])
+    vh_tilde = vh[0:r, :]
+    uh_tilde = u_tilde.conj().T
+
+    # Step 2
+    vs_inv = jnp.linalg.solve(s_tilde.conj().T, vh_tilde).conj().T
+    a_tilde = uh_tilde @ x_prime @ vs_inv
+
+    # Step 3
+    lambda_, W = jnp.linalg.eig(a_tilde)
+    phi = x_prime @ vs_inv @ W
+
+    return a_tilde, phi, lambda_
+
+
+@jax.jit
+def simulate(phi: jax.Array, lambda_: jax.Array, x0: jax.Array, timesteps: jax.Array):
+    """Reconstruct the time dynamics of the DMD model.
+
+    Args:
+    phi (jax.Array): DMD modes (n x r).
+    lambda_ (jax.Array): DMD eigenvalues (r,).
+    x0 (jax.Array): Initial full state (n,).
+    timesteps (jax.Array): 1D array of integer timesteps (e.g., [0,1,2,...,T]).
+
+    Returns:
+        jax.Array: Reconstructed state trajectory (T+1 x n), with the first row equal to x0.
+    """
+    # Project initial state onto the reduced coordinates.
+    z0 = jnp.linalg.pinv(phi) @ x0  # shape: (r,)
+
+    # Define the reduced dynamics operator as a diagonal matrix from the eigenvalues.
+    A_dmd = jnp.diag(lambda_)  # shape: (r x r)
+
+    # Define one time step evolution: z_{k+1} = A_dmd * z_k, then reconstruct x_{k+1} = phi * z_{k+1}.
+    def step(carry, _):
+        z_prev = carry
+        z_next = A_dmd @ z_prev
+        x_next = phi @ z_next
+        return z_next, x_next
+
+    # Number of steps is one less than the number of timesteps (because x0 is given).
+    num_steps = timesteps.shape[0] - 1
+    z_final, x_recons = jax.lax.scan(step, z0, timesteps[:num_steps])
+
+    # Prepend the initial state to the reconstructed trajectory.
+    x_hat = jnp.concatenate([x0[jnp.newaxis, :], x_recons], axis=0)
+    return x_hat
+
+
+def optimize(
+    x: jax.Array,
+    x_prime: jax.Array,
+    t: jax.Array,
+    r_range: tuple[float, float] | jax.Array,
+):
+    """Optimize the rank of the reduced order model.
+
+    Args:
+        x (jax.Array): Data matrix at n-1.
+        x_prime (jax.Array): Data matrix at n.
+        t (jax.Array): Time vector.
+        r_range (tuple[float, float] | jax.Array): Range of ranks to test.
+
+    Returns:
+        jax.Array: Optimal rank.
+    """
+    r_range = jnp.arange(r_range[0], r_range[1])
+    x_0 = x[:, 0]
+
+    best_error = jnp.inf
+    best_r = None
+    best_a_tilde = None
+    best_phi = None
+    best_lambda_ = None
+
+    for r in r_range:
+        r = int(r)
+        a_tilde, phi, lambda_ = fit(x, x_prime, r)
+
+        x_recon = simulate(phi, lambda_, x_0, t[:-1]).T
+        error = _mean_absolute_error(x, x_recon)
+
+        if error < best_error:
+            best_error = error
+            best_r = r
+            best_a_tilde = a_tilde
+            best_phi = phi
+            best_lambda_ = lambda_
+
+    return best_r, best_a_tilde, best_phi, best_lambda_
