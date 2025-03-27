@@ -1,5 +1,6 @@
 # Utils for Data based modeling and control
 from scipy import io
+import jax.numpy as jnp
 
 
 class dotdict(dict):
@@ -20,5 +21,7 @@ def read_mat(source: str) -> dict:
         data: dictionary with the data
     """
     data = io.loadmat(source)
-    data = {k: v.flatten() for k, v in data.items() if not k.startswith("__")}
+    data = {
+        k: jnp.array(v.flatten()) for k, v in data.items() if not k.startswith("__")
+    }
     return dotdict(data)
