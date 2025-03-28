@@ -199,7 +199,7 @@ def optimize(
         pc_range (tuple[float, float]): Range of polynomial coefficients to test.
     """
 
-    scalars = jnp.linspace(pc_range[0], pc_range[1], 5)
+    scalars = jnp.linspace(pc_range[0], pc_range[1], 10)
     arrays = [
         jnp.array(p)
         for i in range(po_range[0], po_range[1] + 1)
@@ -262,5 +262,6 @@ def optimize(
 
             print(f"Progress: {progress:.2f} %")
             print(f"Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds")
+            jax.clear_caches()
 
     return best_params, best_loss, best_func, best_order, best_na, best_nb

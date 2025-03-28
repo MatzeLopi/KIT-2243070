@@ -6,22 +6,7 @@ import jax.numpy as jnp
 from .errors import _mean_absolute_error
 
 
-@jax.jit
-def fit_jit(x, x_prime, V_r, S_r, vs_inv, U_r, Uhat_r):
-    """Jitable part of the DMDc algorithm."""
-    G_r = x_prime @ V_r.conj().T @ jnp.linalg.inv(S_r) @ U_r.conj().T
-    A_r = G_r[:, : x.shape[0]]
-    B_r = G_r[:, x.shape[0] :]
-
-    Atilde = Uhat_r.conj().T @ A_r @ Uhat_r
-    Btilde = Uhat_r.conj().T @ B_r
-
-    Lambda_tilde, W_tilde = jnp.linalg.eig(Atilde)
-    phi = x_prime @ vs_inv @ W_tilde  # modes, shape: n x r
-
-    return Atilde, Btilde, phi, Lambda_tilde, Uhat_r
-
-
+@partial(jax.jit, static_argnames=["r"])
 def fit(x, x_prime, u, r):
     """DMDc with model order reduction via truncated SVD.
 
@@ -46,7 +31,17 @@ def fit(x, x_prime, u, r):
     Uhat, _, _ = jnp.linalg.svd(x_prime, full_matrices=False)
     Uhat_r = Uhat[:, :r]
 
-    return fit_jit(x, x_prime, V_r, S_r, vs_inv, U_r, Uhat_r)
+    G_r = x_prime @ V_r.conj().T @ jnp.linalg.inv(S_r) @ U_r.conj().T
+    A_r = G_r[:, : x.shape[0]]
+    B_r = G_r[:, x.shape[0] :]
+
+    Atilde = Uhat_r.conj().T @ A_r @ Uhat_r
+    Btilde = Uhat_r.conj().T @ B_r
+
+    Lambda_tilde, W_tilde = jnp.linalg.eig(Atilde)
+    phi = x_prime @ vs_inv @ W_tilde  # modes, shape: n x r
+
+    return Atilde, Btilde, phi, Lambda_tilde, Uhat_r
 
 
 @jax.jit

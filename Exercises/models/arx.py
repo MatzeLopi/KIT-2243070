@@ -4,7 +4,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from .errors import _mean_absolute_error
+if __name__ != "__main__":
+    from .errors import _mean_absolute_error
 
 
 @partial(jax.jit, static_argnames=["na", "nb"])
@@ -246,5 +247,6 @@ def optimize(
             print(
                 f"Iteration took {end - start:.2f} seconds, average {dt_av:.2f} seconds"
             )
+            jax.clear_caches()
 
     return best_params, best_loss, best_na, best_nb

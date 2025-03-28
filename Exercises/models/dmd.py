@@ -7,25 +7,7 @@ import jax.numpy as jnp
 from .errors import _mean_absolute_error
 
 
-@jax.jit
-def fit_jit(
-    u_tilde: jax.Array, s_tilde: jax.Array, vh_tilde: jax.Array, x_prime: jax.Array
-):
-    """Jitable part of the DMD algorithm."""
-
-    uh_tilde = u_tilde.conj().T
-
-    # Step 2
-    vs_inv = jnp.linalg.solve(s_tilde.conj().T, vh_tilde).conj().T
-    a_tilde = uh_tilde @ x_prime @ vs_inv
-
-    # Step 3
-    lambda_, W = jnp.linalg.eig(a_tilde)
-    phi = x_prime @ vs_inv @ W
-
-    return a_tilde, phi, lambda_, u_tilde
-
-
+@partial(jax.jit, static_argnames=["r"])
 def fit(
     x: jax.Array, x_prime: jax.Array, r: int
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
@@ -48,7 +30,17 @@ def fit(
     s_tilde = jnp.diag(s[0:r])
     vh_tilde = vh[0:r, :]
 
-    return fit_jit(u_tilde, s_tilde, vh_tilde, x_prime)
+    uh_tilde = u_tilde.conj().T
+
+    # Step 2
+    vs_inv = jnp.linalg.solve(s_tilde.conj().T, vh_tilde).conj().T
+    a_tilde = uh_tilde @ x_prime @ vs_inv
+
+    # Step 3
+    lambda_, W = jnp.linalg.eig(a_tilde)
+    phi = x_prime @ vs_inv @ W
+
+    return a_tilde, phi, lambda_, u_tilde
 
 
 @jax.jit
