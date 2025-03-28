@@ -6,8 +6,23 @@ import jax.numpy as jnp
 from .errors import _mean_absolute_error
 
 
-@partial(jax.jit, static_argnames=("r"))
-def fit(x: jax.Array, x_prime: jax.Array, u: jax.Array, r: int):
+@jax.jit
+def fit_jit(x, x_prime, V_r, S_r, vs_inv, U_r, Uhat_r):
+    """Jitable part of the DMDc algorithm."""
+    G_r = x_prime @ V_r.conj().T @ jnp.linalg.inv(S_r) @ U_r.conj().T
+    A_r = G_r[:, : x.shape[0]]
+    B_r = G_r[:, x.shape[0] :]
+
+    Atilde = Uhat_r.conj().T @ A_r @ Uhat_r
+    Btilde = Uhat_r.conj().T @ B_r
+
+    Lambda_tilde, W_tilde = jnp.linalg.eig(Atilde)
+    phi = x_prime @ vs_inv @ W_tilde  # modes, shape: n x r
+
+    return Atilde, Btilde, phi, Lambda_tilde, Uhat_r
+
+
+def fit(x, x_prime, u, r):
     """DMDc with model order reduction via truncated SVD.
 
     Args:
@@ -21,37 +36,17 @@ def fit(x: jax.Array, x_prime: jax.Array, u: jax.Array, r: int):
         jax.Array: Reduced-order B matrix (r x k).
         jax.Array: Modes (n x r).
     """
-    # 1. Compute the SVD of x and extract the leading r modes.
-    u_x, _, _ = jnp.linalg.svd(x, full_matrices=False)
-    u_tilde = u_x[:, :r]  # n x r
-    uh_tilde = u_tilde.conj().T  # r x n
-
-    # 2. Form the combined snapshot matrix omega = [x; u] of size (n+k) x m.
     omega = jnp.vstack((x, u))
-    U_omega, s_omega, vh_omega = jnp.linalg.svd(omega, full_matrices=False)
+    U, S, V = jnp.linalg.svd(omega, full_matrices=False)
+    U_r: jax.Array = U[:, :r]
+    S_r: jax.Array = jnp.diag(S[:r])
+    V_r: jax.Array = V[:r, :]
+    vs_inv = jnp.linalg.solve(S_r.conj().T, V_r).conj().T[:, :r]
 
-    # 3. Instead of truncating to r, keep r+k singular values to capture control info.
-    k = u.shape[0]
-    trunc = r + k
-    s_omega_tilde = jnp.diag(s_omega[:trunc])
-    vh_omega_tilde = vh_omega[:trunc, :]
+    Uhat, _, _ = jnp.linalg.svd(x_prime, full_matrices=False)
+    Uhat_r = Uhat[:, :r]
 
-    # 4. Compute the pseudoinverse (using the truncated SVD factors)
-    vs_inv = jnp.linalg.solve(s_omega_tilde.conj().T, vh_omega_tilde).conj().T
-    # vs_inv now has shape: m x (r+k)
-
-    # 5. Compute the reduced operator by projecting x_prime into the reduced state space.
-    reduced_operator = uh_tilde @ x_prime @ vs_inv  # shape: r x (r+k)
-
-    # 6. Extract the reduced A and B matrices.
-    A_tilde = reduced_operator[:, :r]  # shape: r x r
-    B_tilde = reduced_operator[:, r : r + k]  # shape: r x k
-
-    # 7. Compute the eigen-decomposition of A_tilde and reconstruct the DMD modes.
-    lambda_, W = jnp.linalg.eig(A_tilde)
-    phi = x_prime @ vs_inv[:, :r] @ W  # modes, shape: n x r
-
-    return A_tilde, B_tilde, phi, lambda_
+    return fit_jit(x, x_prime, V_r, S_r, vs_inv, U_r, Uhat_r)
 
 
 @jax.jit
@@ -80,7 +75,7 @@ def simulate(x0, u_seq, A_tilde, B_tilde, phi):
 
     # Iterate over the control sequence using a scan
     # u_seq has shape (T, k)
-    z_final, x_recons = jax.lax.scan(body_fun, z0, u_seq)
+    _, x_recons = jax.lax.scan(body_fun, z0, u_seq)
 
     # Prepend the initial state x0 to the reconstructed states
     x_hat = jnp.concatenate([x0[jnp.newaxis, :], x_recons], axis=0)
@@ -120,12 +115,13 @@ def optimize(
     best_b_tilde = None
     best_phi = None
     best_lambda_ = None
+    best_transform = None
 
     for r in r_range:
         r = int(r)
-        a_tilde, b_tilde, phi, lambda_ = fit(x, x_prime, u, r)
+        a_tilde, b_tilde, phi, lambda_, transform = fit(x, x_prime, u, r)
 
-        x_recon = simulate(x_0, u.T[:-1], a_tilde, b_tilde, phi).T
+        x_recon = simulate(x_0, u.T[:-1], a_tilde, b_tilde, transform).T
         error = _mean_absolute_error(x, x_recon)
 
         if error < best_error:
@@ -135,5 +131,6 @@ def optimize(
             best_b_tilde = b_tilde
             best_phi = phi
             best_lambda_ = lambda_
+            best_transform = transform
 
-    return best_r, best_a_tilde, best_b_tilde, best_phi, best_lambda_
+    return best_r, best_a_tilde, best_b_tilde, best_phi, best_lambda_, best_transform

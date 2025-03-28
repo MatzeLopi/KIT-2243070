@@ -30,7 +30,7 @@ def read_mat(source: str) -> dict:
         if k.startswith("__"):
             continue
         try:
-            data[k] = jnp.array(v.flatten())
+            data[k] = jnp.array(v)
         except Exception:
             pass
 
