@@ -2,12 +2,26 @@ import time
 import itertools
 from functools import partial
 from typing import Callable
-
+from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
 from .errors import _mean_absolute_error
 from .arx import data_vector as _arx_data_vector
+
+
+@dataclass
+class HammersteinParams:
+    loss: float
+    param_vector: jax.Array
+    na: int
+    nb: int
+    order: int
+    func: Callable
+
+    def __str__(self):
+        return f"Loss: {self.loss}\n Parameters: {self.param_vector},\n na: {self.na},\n nb: {self.nb},\n order: {self.order},\n func: {self.func}"
+    
 
 
 @partial(jax.jit, static_argnames=["na", "nb", "order", "func"])
@@ -199,7 +213,7 @@ def optimize(
         pc_range (tuple[float, float]): Range of polynomial coefficients to test.
     """
 
-    scalars = jnp.linspace(pc_range[0], pc_range[1], 10)
+    scalars = jnp.linspace(pc_range[0], pc_range[1], 5)
     arrays = [
         jnp.array(p)
         for i in range(po_range[0], po_range[1] + 1)
@@ -264,4 +278,13 @@ def optimize(
             print(f"Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds")
             jax.clear_caches()
 
-    return best_params, best_loss, best_func, best_order, best_na, best_nb
+    obj = HammersteinParams(
+        best_loss,
+        best_params,
+        best_na,
+        best_nb,
+        best_order,
+        best_func,
+    )
+
+    return obj
