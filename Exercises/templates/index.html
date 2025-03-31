@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Optimization Progress</title>
+</head>
+<body>
+    <h1>Optimization Progress</h1>
+    <pre id="log"></pre>
+
+    <script>
+        const log = document.getElementById("log");
+        const evtSource = new EventSource("/progress");
+
+        evtSource.onmessage = function(event) {
+            log.textContent += event.data + "\n";
+        };
+    </script>
+</body>
+</html>

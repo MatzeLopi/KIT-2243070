@@ -1,3 +1,4 @@
+import psutil
 import time
 import itertools
 from functools import partial
@@ -197,6 +198,8 @@ def optimize(
     e_range: tuple[int, int],
     po_range: tuple[int, int],
     pc_range: tuple[float, float],
+    *,
+    callback:Callable = print,
 ):
     """Function to optimize the parameters of the Hammerstein model.
 
@@ -272,10 +275,12 @@ def optimize(
         dt = end - start
         dt_av = (dt + dt_av) / 2
         if index % 100 == 0:
+            cpu = psutil.cpu_percent()
+            ram = psutil.virtual_memory().percent
+
             progress = (index + 1) / total_funcs * 100
 
-            print(f"Progress: {progress:.2f} %")
-            print(f"Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds")
+            callback(f"Progress: {progress:.2f} %. Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds, CPU: {cpu:.2f}%, RAM: {ram:.2f}%")
             jax.clear_caches()
 
     obj = HammersteinParams(
