@@ -1,5 +1,4 @@
 from functools import partial
-import timeit
 import jax
 import jax.numpy as jnp
 
@@ -130,4 +129,5 @@ def optimize(
         best_phi,
         best_lambda_,
         best_transform,
+        best_error,
     )

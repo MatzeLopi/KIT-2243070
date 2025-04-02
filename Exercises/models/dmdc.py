@@ -26,7 +26,8 @@ def fit(x, x_prime, u, r):
     U_r: jax.Array = U[:, :r]
     S_r: jax.Array = jnp.diag(S[:r])
     V_r: jax.Array = V[:r, :]
-    vs_inv = jnp.linalg.solve(S_r.conj().T, V_r).conj().T[:, :r]
+
+    energy = jnp.sum(S[:r] ** 2) / jnp.sum(S**2)
 
     Uhat, _, _ = jnp.linalg.svd(x_prime, full_matrices=False)
     Uhat_r = Uhat[:, :r]
@@ -38,34 +39,34 @@ def fit(x, x_prime, u, r):
     Atilde = Uhat_r.conj().T @ A_r @ Uhat_r
     Btilde = Uhat_r.conj().T @ B_r
 
-    Lambda_tilde, W_tilde = jnp.linalg.eig(Atilde)
-    phi = x_prime @ vs_inv @ W_tilde  # modes, shape: n x r
+    Lambda_tilde, _ = jnp.linalg.eig(Atilde)
+    # phi = x_prime @ vs_inv @ W_tilde  # modes, shape: n x r
 
-    return Atilde, Btilde, phi, Lambda_tilde, Uhat_r
+    return Atilde, Btilde, Lambda_tilde, Uhat_r, energy
 
 
 @jax.jit
-def simulate(x0, u_seq, A_tilde, B_tilde, phi):
+def simulate(x0, u_seq, A_tilde, B_tilde, transform):
     """
     Args:
         x0 (jax.Array): Initial full state (n,).
         u_seq (jax.Array): Control input sequence (T x k) where each row is u_k.
         A_tilde (jax.Array): Reduced A matrix (r x r).
         B_tilde (jax.Array): Reduced B matrix (r x k).
-        phi (jax.Array): DMD modes (n x r).
+        transform (jax.Array): Transformation matrix (n x r).
 
     Returns:
         x_hat (jax.Array): Reconstructed state trajectory (T+1 x n), with x_hat[0] = x0.
     """
     # Compute the reduced initial condition by projecting x0 onto the DMD modes
-    z0 = jnp.linalg.pinv(phi) @ x0  # shape: (r,)
+    z0 = jnp.linalg.pinv(transform) @ x0  # shape: (r,)
 
     def body_fun(carry, u_k):
         z_prev = carry
         # Propagate the reduced state using the reduced dynamics
         z_next = A_tilde @ z_prev + B_tilde @ u_k  # shape: (r,)
         # Reconstruct full state from reduced state
-        x_recon = phi @ z_next  # shape: (n,)
+        x_recon = transform @ z_next  # shape: (n,)
         return z_next, x_recon
 
     # Iterate over the control sequence using a scan
@@ -81,8 +82,9 @@ def optimize(
     x: jax.Array,
     x_prime: jax.Array,
     u: jax.Array,
-    t: jax.Array,
     r_range: tuple[float, float] | jax.Array,
+    *,
+    cutoff: None | float = None,
 ):
     """Optimize the rank of the reduced order model.
 
@@ -108,13 +110,12 @@ def optimize(
     best_r = None
     best_a_tilde = None
     best_b_tilde = None
-    best_phi = None
     best_lambda_ = None
     best_transform = None
 
     for r in r_range:
         r = int(r)
-        a_tilde, b_tilde, phi, lambda_, transform = fit(x, x_prime, u, r)
+        a_tilde, b_tilde, lambda_, transform, energy = fit(x, x_prime, u, r)
 
         x_recon = simulate(x_0, u.T[:-1], a_tilde, b_tilde, transform).T
         error = _mean_absolute_error(x, x_recon)
@@ -124,8 +125,16 @@ def optimize(
             best_r = r
             best_a_tilde = a_tilde
             best_b_tilde = b_tilde
-            best_phi = phi
             best_lambda_ = lambda_
             best_transform = transform
 
-    return best_r, best_a_tilde, best_b_tilde, best_phi, best_lambda_, best_transform
+        if cutoff is not None and energy < cutoff:
+            break
+
+    return (
+        best_r,
+        best_a_tilde,
+        best_b_tilde,
+        best_lambda_,
+        best_transform,
+    )

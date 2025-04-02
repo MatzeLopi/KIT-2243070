@@ -159,6 +159,27 @@ def simulate(
 ) -> jax.Array:
     """Simulate arx model.
 
+    This function simulates the output of a discrete-time ARX (AutoRegressive with eXogenous input) model,
+    given an input sequence and a parameter vector identified, for example, using Recursive Least Squares (RLS).
+
+    The regressor is constructed from past outputs and past inputs, and multiplied with the parameter vector
+    to compute the current output.
+
+    This is mathematically equivalent to applying a discrete-time transfer function of the form:
+
+        G(q⁻¹) = B(q⁻¹) / A(q⁻¹)
+
+    where:
+        A(q⁻¹) = 1 + a₁ q⁻¹ + a₂ q⁻² + ... + a_na q⁻ⁿᵃ
+        B(q⁻¹) = b₁ q⁻¹ + b₂ q⁻² + ... + b_nb q⁻ⁿᵇ
+
+    After rearranging the difference equation, the system can be expressed in predictive form:
+
+        yₖ = -a₁ yₖ₋₁ - ... - a_na yₖ₋ₙₐ + b₁ uₖ₋₁ + ... + b_nb uₖ₋ₙᵦ
+
+    This structure is directly reflected in the construction of the `data_vector(...)`, making this simulation
+    numerically identical to evaluating the transfer function in the time domain.
+
     Args:
         y0 (jax.Array): Initial history for the output (length at least na)
         u (jax.Array): Input sequence over simulation horizon.

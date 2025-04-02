@@ -22,7 +22,6 @@ class HammersteinParams:
 
     def __str__(self):
         return f"Loss: {self.loss}\n Parameters: {self.param_vector},\n na: {self.na},\n nb: {self.nb},\n order: {self.order},\n func: {self.func}"
-    
 
 
 @partial(jax.jit, static_argnames=["na", "nb", "order", "func"])
@@ -42,15 +41,18 @@ def data_vector(
     Returns:
         jax.Array: Data Vector for step k.
     """
+    # TODO: Adept this to start apply function to all the u elements
     lin: jax.Array = _arx_data_vector(y, u, na, nb, k)
-    input_dep = lin[na:]
 
-    orders = jnp.arange(2, order + 1)
+    sa = lin[:na]
+    sb = lin[na:]
 
-    non_lin = jax.vmap(lambda p: jax.vmap(lambda e: func(e, p))(input_dep))(orders)
+    orders = jnp.arange(1, order + 1)
+
+    non_lin = jax.vmap(lambda p: jax.vmap(lambda e: func(e, p))(sb))(orders)
 
     non_lin = non_lin.reshape(-1)
-    return jnp.concatenate([lin, non_lin])
+    return jnp.concatenate([sa, non_lin])
 
 
 def rsl(
@@ -199,7 +201,7 @@ def optimize(
     po_range: tuple[int, int],
     pc_range: tuple[float, float],
     *,
-    callback:Callable = print,
+    callback: Callable = print,
 ):
     """Function to optimize the parameters of the Hammerstein model.
 
@@ -216,7 +218,7 @@ def optimize(
         pc_range (tuple[float, float]): Range of polynomial coefficients to test.
     """
 
-    scalars = jnp.linspace(pc_range[0], pc_range[1], 5)
+    scalars = jnp.linspace(pc_range[0], pc_range[1], 10)
     arrays = [
         jnp.array(p)
         for i in range(po_range[0], po_range[1] + 1)
@@ -280,7 +282,9 @@ def optimize(
 
             progress = (index + 1) / total_funcs * 100
 
-            callback(f"Progress: {progress:.2f} %. Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds, CPU: {cpu:.2f}%, RAM: {ram:.2f}%")
+            callback(
+                f"Progress: {progress:.2f} %. Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds, CPU: {cpu:.2f}%, RAM: {ram:.2f}%"
+            )
             jax.clear_caches()
 
     obj = HammersteinParams(
