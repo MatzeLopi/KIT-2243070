@@ -10,6 +10,8 @@ import jax.numpy as jnp
 from .errors import _mean_absolute_error
 from .arx import data_vector as _arx_data_vector
 
+KEY = jax.random.PRNGKey(0)
+
 
 @dataclass
 class HammersteinParams:
@@ -186,7 +188,22 @@ def simulate(
 
 
 @jax.jit
-def _polynomial(x, p, array: jax.Array = jnp.array([1])):
+def _polynomial(
+    x: jax.Array, p: jax.Array, array: jax.Array = jnp.array([1])
+) -> jax.Array:
+    """Polynomial function to be used in the Hammerstein model.
+
+    This function evaluates a polynomial of the form:
+    x**(p) * coeff[0] + x**(p-1) * coeff[1] + ... + x**(p-n) * coeff[n]
+
+    where p is the order of the polynomial and coeff are the coefficients.
+    Args:
+        x (jax.Array): Input value
+        p (jax.Array): Polynomial order
+        array (jax.Array): Coefficients of the polynomial
+    Returns:
+        jax.Array: Evaluated polynomial
+    """
     exponents = p - jnp.arange(array.shape[0])
     powers = x**exponents
     return jnp.sum(powers * array)
@@ -218,7 +235,7 @@ def optimize(
         pc_range (tuple[float, float]): Range of polynomial coefficients to test.
     """
 
-    scalars = jnp.linspace(pc_range[0], pc_range[1], 10)
+    scalars = jnp.linspace(pc_range[0], pc_range[1], 5)
     arrays = [
         jnp.array(p)
         for i in range(po_range[0], po_range[1] + 1)
@@ -286,6 +303,137 @@ def optimize(
                 f"Progress: {progress:.2f} %. Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds, CPU: {cpu:.2f}%, RAM: {ram:.2f}%"
             )
             jax.clear_caches()
+
+    obj = HammersteinParams(
+        best_loss,
+        best_params,
+        best_na,
+        best_nb,
+        best_order,
+        best_func,
+    )
+
+    return obj
+
+
+def optimize_grad(
+    y: jax.Array,
+    u: jax.Array,
+    na_range: tuple[int, int],
+    nb_range: tuple[int, int],
+    e_range: tuple[int, int],
+    po_range: tuple[int, int],
+    *,
+    callback: Callable = print,
+):
+    """Function to optimize the parameters of the Hammerstein model.
+
+    Polynomials will be of the form:
+    x**(p) * coeff[0] + x**(p-1) * coeff[1] + ... + x**(p-n) * coeff[n]
+
+    Args:
+        y (jax.Array): Output data
+        u (jax.Array): Input data
+        na_range (tuple[int, int]): Range of na values to test
+        nb_range (tuple[int, int]): Range of nb values to test
+        e_range (tuple[int, int]): Range for number of polynomial terms to test.
+        po_range (tuple[int, int]): Range of polynomial orders to test.
+    """
+    orders = range(e_range[0], e_range[1] + 1)
+
+    best_params = None
+    best_na = None
+    best_nb = None
+    best_func = None
+    best_order = None
+    best_loss = jnp.inf
+
+    na_grid, nb_grid, order_grid, term_grid = jnp.meshgrid(
+        jnp.arange(na_range[0], na_range[1]),
+        jnp.arange(nb_range[0], nb_range[1]),
+        jnp.array(orders),
+        jnp.arange(po_range[0], po_range[1]),
+        indexing="ij",
+    )
+
+    total_params = len(na_grid.flatten())
+
+    params = zip(
+        na_grid.flatten(),
+        nb_grid.flatten(),
+        order_grid.flatten(),
+        term_grid.flatten(),
+    )
+
+    print(f"Total parameters: {total_params}")
+    dt_av = 0
+    dt = 0
+    for index, (na, nb, order, terms) in enumerate(params):
+        start = time.time()
+
+        na = int(na)
+        nb = int(nb)
+        order = int(order)
+        terms = int(terms)
+
+        array = jax.random.uniform(
+            KEY, shape=(terms,), minval=0.1, maxval=1.0
+        ).flatten()
+
+        for _ in range(25):
+
+            func = partial(
+                _polynomial,
+                array=array,
+            )
+
+            def loss_fn(array):
+                func = partial(_polynomial, array=array)
+                p_hat, *_ = fit(y, u, na, nb, order, func)
+                y_hat = simulate(jnp.zeros((na,)), u, na, nb, order, func, p_hat)
+                return _mean_absolute_error(y, y_hat), p_hat
+
+            (loss, p_hat), grad = jax.value_and_grad(loss_fn, has_aux=True)(array)
+
+            if loss < best_loss:
+                best_loss = loss
+                best_params = p_hat
+                best_func = func
+                best_order = order
+                best_na = na
+                best_nb = nb
+
+            if jnp.isnan(grad).any():
+                array = jax.random.uniform(
+                    KEY, shape=(terms,), minval=0.1, maxval=1.0
+                ).flatten()
+
+            else:
+                grad_norm = jnp.linalg.norm(grad)
+                max_norm = 1.0
+                scaled_grad = jnp.where(
+                    grad_norm > max_norm, grad * (max_norm / grad_norm), grad
+                )
+
+                delta = 10e-6 * scaled_grad
+                array = array - delta
+
+                if jnp.all(jnp.abs(delta) < 1e-7):
+                    break
+
+            end = time.time()
+            dt = end - start
+            dt_av = (dt + dt_av) / 2
+
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+
+        progress = (index + 1) / total_params * 100
+
+        callback(
+            f"Progress: {progress:.2f} %. Current iteration time: {dt:.2f}s, average: {dt_av:.2f} seconds, CPU: {cpu:.2f}%, RAM: {ram:.2f}%"
+        )
+        jax.clear_caches()
 
     obj = HammersteinParams(
         best_loss,

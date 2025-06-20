@@ -112,6 +112,7 @@ def optimize(
     best_b_tilde = None
     best_lambda_ = None
     best_transform = None
+    best_energy = None
 
     for r in r_range:
         r = int(r)
@@ -127,6 +128,7 @@ def optimize(
             best_b_tilde = b_tilde
             best_lambda_ = lambda_
             best_transform = transform
+            best_energy = energy
 
         if cutoff is not None and energy < cutoff:
             break
@@ -137,4 +139,5 @@ def optimize(
         best_b_tilde,
         best_lambda_,
         best_transform,
+        best_energy,
     )
